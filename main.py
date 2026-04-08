@@ -16,6 +16,7 @@ from schemas.banking_schema import (
     TransferRequest
 )
 from schemas.auth_schema import UserRegister
+from schemas.auth_schema import UpdateProfileRequest
 
 from services.auth_service import AuthService
 from services.user_service import get_customer_id_by_user
@@ -292,6 +293,33 @@ def my_profile(user_id: int = Depends(get_current_user)):
             raise HTTPException(status_code=404, detail="Customer not found")
 
         return dict(customer)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# =============================
+# ⭐ NEW: UPDATE PROFILE ROUTE
+# =============================
+@app.put("/update-profile")
+def update_profile(
+    request: UpdateProfileRequest,
+    user_id: int = Depends(get_current_user)
+):
+    try:
+        customer_id = get_customer_id_by_user(user_id)
+
+        if not customer_id:
+            raise HTTPException(status_code=404, detail="Customer not found")
+
+        customer_repo.update_customer(
+            customer_id,
+            request.full_name,
+            request.phone
+        )
+
+        return {"message": "Profile updated successfully"}
+
     except HTTPException:
         raise
     except Exception as e:

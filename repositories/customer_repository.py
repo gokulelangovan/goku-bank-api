@@ -44,3 +44,19 @@ class CustomerRepository:
             return cursor.fetchone()
         finally:
             conn.close()
+    
+    def update_customer(self, customer_id, full_name, phone):
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE customers
+                SET full_name = %s, phone = %s
+                WHERE id = %s
+                """,
+                (full_name, phone, customer_id)
+            )
+            conn.commit()
+        finally:
+            conn.close()
