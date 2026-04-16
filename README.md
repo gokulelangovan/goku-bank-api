@@ -1,184 +1,168 @@
 # 🏦 Goku Bank API
 
-A full-stack inspired backend banking system built using **FastAPI** and **PostgreSQL**, designed with clean architecture and real-world practices.
+A full-stack digital banking system built with **FastAPI + React**, featuring secure account management, transactions, and real-time balance tracking.
 
 ---
 
 ## 🚀 Features
 
-* 🔐 **JWT Authentication**
+### 🔐 Authentication
+- JWT-based login system
+- Secure user sessions
 
-  * User registration & login
-  * Secure password hashing (bcrypt)
+### 👤 Profile Management
+- Update name & phone number
+- Persistent user data
 
-* 🏦 **Account Management**
+### 💳 Account System
+- Multiple accounts per user
+- Unique account numbers
+- Real-time balance updates
 
-  * Create multiple accounts per user
-  * Unique account numbers
+### 💰 Transactions
+- Deposit money
+- Withdraw money
+- Transfer between accounts
 
-* 💸 **Transactions**
-
-  * Deposit & Withdraw
-  * Secure Transfer between accounts
-  * Atomic transactions (rollback on failure)
-
-* 📜 **Transaction History**
-
-  * View all transactions per user
-  * Ordered by latest activity
-
-* 🧠 **Clean Architecture**
-
-  * Routes → Services → Repositories
-  * Separation of concerns
-  * Scalable structure
-
----
-
-## 🏗️ Tech Stack
-
-* **Backend:** FastAPI
-* **Database:** PostgreSQL
-* **Auth:** JWT (python-jose)
-* **ORM/DB Access:** psycopg2
-* **Security:** bcrypt
-* **Environment Management:** python-dotenv
+### 🔁 Transfer System (Secure)
+- Ownership validation
+- Receiver validation
+- Insufficient balance protection
+- Same-account transfer prevention
+- Atomic DB transactions (no partial updates)
+- Dual transaction logging (IN / OUT)
 
 ---
 
-## 📂 Project Structure
+## 🧠 Security Highlights
 
-```
-goku_bank/
-│
-├── database/
-│   ├── connection.py
-│   └── init_db.py
-│
-├── repositories/
-│   ├── user_repository.py
-│   ├── customer_repository.py
-│   ├── account_repository.py
-│   └── transaction_repository.py
-│
-├── services/
-│   ├── auth_service.py
-│   ├── banking_service.py
-│   ├── jwt_handler.py
-│   └── security.py
-│
-├── schemas/
-│   ├── auth_schema.py
-│   └── banking_schema.py
-│
-├── main.py
-├── requirements.txt
-└── .env
-```
+- ❌ No unauthorized account access
+- ❌ No negative or zero transactions
+- ❌ No overdraft withdrawals
+- ❌ No same-account transfers
+- 🔐 Row-level locking using `FOR UPDATE`
+- 🔁 Rollback on failure (data integrity guaranteed)
+
+---
+
+## 🛠 Tech Stack
+
+### Backend
+- FastAPI
+- PostgreSQL
+- Pydantic
+- JWT Authentication
+
+### Frontend
+- React (Vite)
+- Framer Motion
+- React Hot Toast
+
+---
+
+## 📦 API Endpoints
+
+### Auth
+- `POST /login`
+
+### Accounts
+- `GET /accounts`
+
+### Transactions
+- `GET /transactions`
+
+### Banking
+- `POST /deposit`
+- `POST /withdraw`
+- `POST /transfer`
+
+### Profile
+- `PUT /update-profile`
 
 ---
 
 ## ⚙️ Setup Instructions
 
-### 1️⃣ Clone the repo
+### 1. Clone the repo
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/goku-bank-api.git
-cd goku-bank-api
+git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git
+cd YOUR_REPO
 ```
 
----
-
-### 2️⃣ Install dependencies
+### 2. Backend Setup
 
 ```bash
+cd backend
 pip install -r requirements.txt
 ```
 
----
-
-### 3️⃣ Setup PostgreSQL
-
-* Install PostgreSQL
-* Create a database:
-
-```sql
-CREATE DATABASE goku_bank;
-```
-
----
-
-### 4️⃣ Configure environment variables
-
 Create a `.env` file:
 
-```
-DATABASE_URL=postgresql://postgres:1234@localhost:5432/goku_bank
+```env
+DATABASE_URL=your_db_url
+SECRET_KEY=your_secret
 ```
 
----
-
-### 5️⃣ Run the server
+Run the server:
 
 ```bash
 uvicorn main:app --reload
 ```
 
+### 3. Frontend Setup
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
 ---
 
-### 6️⃣ Open API Docs
+## 🧪 Sample Request
+
+```bash
+curl -X POST "http://127.0.0.1:8000/transfer" \
+-H "Authorization: Bearer YOUR_TOKEN" \
+-H "Content-Type: application/json" \
+-d '{
+  "sender_account": "GBK-2026-000001",
+  "receiver_account": "GBK-2026-000002",
+  "amount": 1000
+}'
+```
+
+---
+
+## 📊 System Flow
 
 ```
-http://127.0.0.1:8000/docs
+User → JWT → Backend
+     → Validate Ownership
+     → Perform Transaction
+     → Update Balance
+     → Log Transaction
 ```
 
 ---
 
-## 🧪 API Flow
+## 🔮 Future Improvements
 
-1. Register user
-2. Login → get JWT token
-3. Create account
-4. Deposit / Withdraw
-5. Transfer funds
-6. View transactions
-
----
-
-## 🔐 Security Highlights
-
-* Password hashing using bcrypt
-* JWT-based authentication
-* Ownership validation for transactions
-
----
-
-## 🧠 Key Learnings
-
-* Real-world debugging > tutorials
-* Database schema must match application logic
-* Environment configuration is critical
-* Transaction safety is essential in financial systems
-
----
-
-## 🚀 Future Improvements
-
-* Add `transfer_id` for transaction linking
-* Store `balance_after` for audit logs
-* Role-based access (admin/user)
-* Frontend integration (React)
-* Deploy with Render + managed PostgreSQL
+- [ ] Transaction history filters
+- [ ] Spending analytics dashboard
+- [ ] External payment integration (UPI simulation)
+- [ ] Rate limiting & fraud detection
+- [ ] Admin panel
 
 ---
 
 ## 👨‍💻 Author
 
-Built by Gokul 🚀
-From CLI → Full Backend System
+**Gokul 🐼** — Digital Associate @ Amazon
 
 ---
 
-## ⭐ If you like this project
+## ⭐ Support
 
-Give it a star ⭐ and share your thoughts!
+If you like this project, give it a ⭐ on GitHub!
