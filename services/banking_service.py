@@ -12,140 +12,222 @@ class BankingService:
     # -----------------------------
     # Deposit
     # -----------------------------
-    def deposit(self, account_number, amount):
-        try:
-            if amount <= 0:
-                raise ValueError("Deposit amount must be positive")
+    def deposit(self, user_id: int, account_number: str, amount: float):
 
-            account = self.account_repo.get_by_account_number(account_number)
+        # 1️⃣ Validate amount
+        if amount <= 0:
+            raise Exception("Invalid amount")
+
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+
+            # 2️⃣ Ownership check
+            cursor.execute("""
+                SELECT id, balance FROM accounts
+                WHERE account_number = %s AND customer_id = %s
+            """, (account_number, user_id))
+
+            account = cursor.fetchone()
 
             if not account:
-                raise ValueError("Account not found")
+                raise Exception("Unauthorized account access")
 
-            new_balance = account["balance"] + amount
+            current_balance = account["balance"]
 
-            self.account_repo.update_balance(account["id"], new_balance)
+            # 3️⃣ Calculate new balance
+            new_balance = current_balance + amount
 
-            self.transaction_repo.create_transaction(
-                account_id=account["id"],
-                transaction_type="DEPOSIT",
-                amount=amount,
-                reference="Cash Deposit"
-            )
+            # 4️⃣ Update balance
+            cursor.execute("""
+                UPDATE accounts
+                SET balance = %s
+                WHERE account_number = %s
+            """, (new_balance, account_number))
 
-            logger.info(f"Deposit {amount} to {account_number} | new balance: {new_balance}")
+            # 5️⃣ Log transaction with balance_after ✅
+            cursor.execute("""
+                INSERT INTO transactions (
+                    account_id,
+                    amount,
+                    transaction_type,
+                    balance_after
+                )
+                VALUES (%s, %s, 'DEPOSIT', %s)
+            """, (account["id"], amount, new_balance))
+
+            conn.commit()
+
             return new_balance
 
-        except Exception as e:
-            logger.error(f"Deposit failed for {account_number}: {str(e)}")
-            raise
+        finally:
+            conn.close()
 
     # -----------------------------
     # Withdraw
     # -----------------------------
-    def withdraw(self, account_number, amount):
-        try:
-            if amount <= 0:
-                raise ValueError("Withdrawal amount must be positive")
+    def withdraw(self, user_id: int, account_number: str, amount: float):
 
-            account = self.account_repo.get_by_account_number(account_number)
+        # 1️⃣ Validate amount
+        if amount <= 0:
+            raise Exception("Invalid amount")
+
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+
+            # 2️⃣ Ownership check
+            cursor.execute("""
+                SELECT id, balance FROM accounts
+                WHERE account_number = %s AND customer_id = %s
+            """, (account_number, user_id))
+
+            account = cursor.fetchone()
 
             if not account:
-                raise ValueError("Account not found")
+                raise Exception("Unauthorized account access")
 
-            if account["balance"] < amount:
-                raise ValueError("Insufficient balance")
+            current_balance = account["balance"]
 
-            new_balance = account["balance"] - amount
+            # 3️⃣ Balance check
+            if current_balance < amount:
+                raise Exception("Insufficient funds")
 
-            self.account_repo.update_balance(account["id"], new_balance)
+            new_balance = current_balance - amount
 
-            self.transaction_repo.create_transaction(
-                account_id=account["id"],
-                transaction_type="WITHDRAW",
-                amount=amount,
-                reference="Cash Withdrawal"
-            )
+            # 4️⃣ Update balance
+            cursor.execute("""
+                UPDATE accounts
+                SET balance = %s
+                WHERE account_number = %s
+            """, (new_balance, account_number))
 
-            logger.info(f"Withdraw {amount} from {account_number} | new balance: {new_balance}")
+            # 5️⃣ Log transaction (WITH balance_after ✅)
+            cursor.execute("""
+                INSERT INTO transactions (account_id, amount, transaction_type, balance_after)
+                VALUES (%s, %s, 'WITHDRAW', %s)
+            """, (account["id"], amount, new_balance))
+
+            conn.commit()
+
             return new_balance
 
-        except Exception as e:
-            logger.error(f"Withdraw failed for {account_number}: {str(e)}")
-            raise
+        finally:
+            conn.close()
 
     # -----------------------------
     # Transfer (Atomic)
     # -----------------------------
-    def transfer(self, sender_acc_no, receiver_acc_no, amount):
+    def transfer(self, user_id: int, sender_acc: str, receiver_acc: str, amount: float):
+
+        # 1️⃣ Basic validations
         if amount <= 0:
-            raise ValueError("Transfer amount must be positive")
+            raise Exception("Invalid amount")
 
-        if sender_acc_no == receiver_acc_no:
-            raise ValueError("Cannot transfer to the same account")
+        if sender_acc == receiver_acc:
+            raise Exception("Cannot transfer to same account")
 
-        conn = None
+        conn = get_connection()
         try:
-            conn = get_connection()
             cursor = conn.cursor()
 
-            cursor.execute(
-                "SELECT * FROM accounts WHERE account_number = %s",
-                (sender_acc_no,)
-            )
+            # 2️⃣ Lock sender row (prevents race condition 🔥)
+            cursor.execute("""
+                SELECT id, balance FROM accounts
+                WHERE account_number = %s AND customer_id = %s
+                FOR UPDATE
+            """, (sender_acc, user_id))
+
             sender = cursor.fetchone()
 
-            cursor.execute(
-                "SELECT * FROM accounts WHERE account_number = %s",
-                (receiver_acc_no,)
-            )
+            if not sender:
+                raise Exception("Unauthorized sender account")
+
+            # 3️⃣ Lock receiver row
+            cursor.execute("""
+                SELECT id, balance FROM accounts
+                WHERE account_number = %s
+                FOR UPDATE
+            """, (receiver_acc,))
+
             receiver = cursor.fetchone()
 
-            if not sender:
-                raise ValueError("Sender account not found")
-
             if not receiver:
-                raise ValueError("Receiver account not found")
+                raise Exception("Receiver not found")
 
+            # 4️⃣ Balance check
             if sender["balance"] < amount:
-                raise ValueError("Insufficient balance")
+                raise Exception("Insufficient funds")
 
+            # 5️⃣ Calculate balances
             new_sender_balance = sender["balance"] - amount
             new_receiver_balance = receiver["balance"] + amount
 
-            self.account_repo.update_balance(sender["id"], new_sender_balance, conn)
-            self.account_repo.update_balance(receiver["id"], new_receiver_balance, conn)
+            # 6️⃣ Update sender
+            cursor.execute("""
+                UPDATE accounts
+                SET balance = %s
+                WHERE id = %s
+            """, (new_sender_balance, sender["id"]))
 
-            self.transaction_repo.create_transaction(
-                sender["id"], "TRANSFER_OUT", amount,
-                f"Transfer to {receiver_acc_no}", conn
-            )
-            self.transaction_repo.create_transaction(
-                receiver["id"], "TRANSFER_IN", amount,
-                f"Transfer from {sender_acc_no}", conn
-            )
+            # 7️⃣ Update receiver
+            cursor.execute("""
+                UPDATE accounts
+                SET balance = %s
+                WHERE id = %s
+            """, (new_receiver_balance, receiver["id"]))
+
+            # 8️⃣ Generate reference (optional but 🔥)
+            reference = f"TXN-{sender_acc[-4:]}-{receiver_acc[-4:]}"
+
+            # 9️⃣ Log sender transaction
+            cursor.execute("""
+                INSERT INTO transactions (
+                    account_id,
+                    amount,
+                    transaction_type,
+                    balance_after,
+                    reference
+                )
+                VALUES (%s, %s, 'TRANSFER_OUT', %s, %s)
+            """, (
+                sender["id"],
+                amount,
+                new_sender_balance,
+                f"To {receiver_acc} | {reference}"
+            ))
+
+            # 🔟 Log receiver transaction
+            cursor.execute("""
+                INSERT INTO transactions (
+                    account_id,
+                    amount,
+                    transaction_type,
+                    balance_after,
+                    reference
+                )
+                VALUES (%s, %s, 'TRANSFER_IN', %s, %s)
+            """, (
+                receiver["id"],
+                amount,
+                new_receiver_balance,
+                f"From {sender_acc} | {reference}"
+            ))
 
             conn.commit()
 
-            logger.info(
-                f"Transfer {amount} from {sender_acc_no} to {receiver_acc_no} | "
-                f"sender: {new_sender_balance} | receiver: {new_receiver_balance}"
-            )
-
             return {
                 "sender_balance": new_sender_balance,
-                "receiver_balance": new_receiver_balance
+                "receiver_balance": new_receiver_balance,
+                "reference": reference
             }
 
         except Exception as e:
-            if conn:
-                conn.rollback()
-            logger.error(f"Transfer failed {sender_acc_no} -> {receiver_acc_no}: {str(e)}")
-            raise
+            conn.rollback()  # 🔐 rollback everything if anything fails
+            raise e
 
         finally:
-            if conn:
-                conn.close()
+            conn.close()
 
     # -----------------------------
     # Get Accounts by Customer

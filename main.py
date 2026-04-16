@@ -152,11 +152,19 @@ def deposit(
     user_id: int = Depends(get_current_user)
 ):
     try:
-        new_balance = service.deposit(request.account_number, request.amount)
-        return {"message": "Deposit successful", "new_balance": new_balance}
+        new_balance = service.deposit(
+            user_id,
+            request.account_number,
+            request.amount
+        )
+
+        return {
+            "message": "Deposit successful",
+            "new_balance": new_balance
+        }
+
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-
 
 # -----------------------------
 # WITHDRAW
@@ -168,8 +176,17 @@ def withdraw(
     user_id: int = Depends(get_current_user)
 ):
     try:
-        new_balance = service.withdraw(request.account_number, request.amount)
-        return {"message": "Withdrawal successful", "new_balance": new_balance}
+        new_balance = service.withdraw(
+            user_id,
+            request.account_number,
+            request.amount
+        )
+
+        return {
+            "message": "Withdraw successful",
+            "new_balance": new_balance
+        }
+
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -184,26 +201,18 @@ def transfer(
     user_id: int = Depends(get_current_user)
 ):
     try:
-        customer_id = get_customer_id_by_user(user_id)
-
-        if not customer_id:
-            raise HTTPException(status_code=404, detail="Customer not found")
-
-        sender_account = account_repo.get_by_account_number(request.sender_account)
-
-        if not sender_account:
-            raise HTTPException(status_code=404, detail="Sender account not found")
-
-        if sender_account["customer_id"] != customer_id:
-            raise HTTPException(status_code=403, detail="Unauthorized")
-
-        return service.transfer(
+        result = service.transfer(
+            user_id,
             request.sender_account,
             request.receiver_account,
             request.amount
         )
-    except HTTPException:
-        raise
+
+        return {
+            "message": "Transfer successful",
+            "data": result
+        }
+
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
