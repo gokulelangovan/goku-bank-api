@@ -233,9 +233,6 @@ def my_accounts(
 
         customer = customer_repo.get_customer_by_id(customer_id)
 
-        if not customer:
-            raise HTTPException(status_code=404, detail="Customer not found")
-
         accounts = service.get_my_accounts(customer_id)
 
         return {
@@ -246,8 +243,7 @@ def my_accounts(
             },
             "accounts": [dict(a) for a in accounts]
         }
-    except HTTPException:
-        raise
+
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -256,31 +252,20 @@ def my_accounts(
 # MY TRANSACTIONS
 # -----------------------------
 @app.get("/my-transactions")
-def my_transactions(user_id: int = Depends(get_current_user)):
+def my_transactions(
+    service=Depends(get_banking_service),
+    user_id: int = Depends(get_current_user)
+):
     try:
         customer_id = get_customer_id_by_user(user_id)
 
         if not customer_id:
             raise HTTPException(status_code=404, detail="Customer not found")
 
-        conn = get_connection()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT t.*
-                FROM transactions t
-                WHERE t.account_id IN (
-                    SELECT id FROM accounts WHERE customer_id = %s
-                )
-                ORDER BY t.id DESC
-            """, (customer_id,))
-            transactions = [dict(row) for row in cursor.fetchall()]
-        finally:
-            conn.close()
+        transactions = service.get_transactions(customer_id)
 
-        return transactions
-    except HTTPException:
-        raise
+        return [dict(t) for t in transactions]
+
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

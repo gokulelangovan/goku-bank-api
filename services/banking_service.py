@@ -1,5 +1,4 @@
 from database.connection import get_connection
-from services.logger import logger
 
 
 class BankingService:
@@ -14,7 +13,6 @@ class BankingService:
     # -----------------------------
     def deposit(self, user_id: int, account_number: str, amount: float):
 
-        # 1️⃣ Validate amount
         if amount <= 0:
             raise Exception("Invalid amount")
 
@@ -22,7 +20,6 @@ class BankingService:
         try:
             cursor = conn.cursor()
 
-            # 2️⃣ Ownership check
             cursor.execute("""
                 SELECT id, balance FROM accounts
                 WHERE account_number = %s AND customer_id = %s
@@ -33,31 +30,20 @@ class BankingService:
             if not account:
                 raise Exception("Unauthorized account access")
 
-            current_balance = account["balance"]
+            new_balance = account["balance"] + amount
 
-            # 3️⃣ Calculate new balance
-            new_balance = current_balance + amount
-
-            # 4️⃣ Update balance
             cursor.execute("""
                 UPDATE accounts
                 SET balance = %s
-                WHERE account_number = %s
-            """, (new_balance, account_number))
+                WHERE id = %s
+            """, (new_balance, account["id"]))
 
-            # 5️⃣ Log transaction with balance_after ✅
             cursor.execute("""
-                INSERT INTO transactions (
-                    account_id,
-                    amount,
-                    transaction_type,
-                    balance_after
-                )
+                INSERT INTO transactions (account_id, amount, transaction_type, balance_after)
                 VALUES (%s, %s, 'DEPOSIT', %s)
             """, (account["id"], amount, new_balance))
 
             conn.commit()
-
             return new_balance
 
         finally:
@@ -68,7 +54,6 @@ class BankingService:
     # -----------------------------
     def withdraw(self, user_id: int, account_number: str, amount: float):
 
-        # 1️⃣ Validate amount
         if amount <= 0:
             raise Exception("Invalid amount")
 
@@ -76,7 +61,6 @@ class BankingService:
         try:
             cursor = conn.cursor()
 
-            # 2️⃣ Ownership check
             cursor.execute("""
                 SELECT id, balance FROM accounts
                 WHERE account_number = %s AND customer_id = %s
@@ -87,40 +71,33 @@ class BankingService:
             if not account:
                 raise Exception("Unauthorized account access")
 
-            current_balance = account["balance"]
-
-            # 3️⃣ Balance check
-            if current_balance < amount:
+            if account["balance"] < amount:
                 raise Exception("Insufficient funds")
 
-            new_balance = current_balance - amount
+            new_balance = account["balance"] - amount
 
-            # 4️⃣ Update balance
             cursor.execute("""
                 UPDATE accounts
                 SET balance = %s
-                WHERE account_number = %s
-            """, (new_balance, account_number))
+                WHERE id = %s
+            """, (new_balance, account["id"]))
 
-            # 5️⃣ Log transaction (WITH balance_after ✅)
             cursor.execute("""
                 INSERT INTO transactions (account_id, amount, transaction_type, balance_after)
                 VALUES (%s, %s, 'WITHDRAW', %s)
             """, (account["id"], amount, new_balance))
 
             conn.commit()
-
             return new_balance
 
         finally:
             conn.close()
 
     # -----------------------------
-    # Transfer (Atomic)
+    # Transfer
     # -----------------------------
     def transfer(self, user_id: int, sender_acc: str, receiver_acc: str, amount: float):
 
-        # 1️⃣ Basic validations
         if amount <= 0:
             raise Exception("Invalid amount")
 
@@ -131,7 +108,7 @@ class BankingService:
         try:
             cursor = conn.cursor()
 
-            # 2️⃣ Lock sender row (prevents race condition 🔥)
+            # Lock sender
             cursor.execute("""
                 SELECT id, balance FROM accounts
                 WHERE account_number = %s AND customer_id = %s
@@ -143,7 +120,7 @@ class BankingService:
             if not sender:
                 raise Exception("Unauthorized sender account")
 
-            # 3️⃣ Lock receiver row
+            # Lock receiver
             cursor.execute("""
                 SELECT id, balance FROM accounts
                 WHERE account_number = %s
@@ -155,64 +132,31 @@ class BankingService:
             if not receiver:
                 raise Exception("Receiver not found")
 
-            # 4️⃣ Balance check
             if sender["balance"] < amount:
                 raise Exception("Insufficient funds")
 
-            # 5️⃣ Calculate balances
             new_sender_balance = sender["balance"] - amount
             new_receiver_balance = receiver["balance"] + amount
 
-            # 6️⃣ Update sender
             cursor.execute("""
-                UPDATE accounts
-                SET balance = %s
-                WHERE id = %s
+                UPDATE accounts SET balance = %s WHERE id = %s
             """, (new_sender_balance, sender["id"]))
 
-            # 7️⃣ Update receiver
             cursor.execute("""
-                UPDATE accounts
-                SET balance = %s
-                WHERE id = %s
+                UPDATE accounts SET balance = %s WHERE id = %s
             """, (new_receiver_balance, receiver["id"]))
 
-            # 8️⃣ Generate reference (optional but 🔥)
             reference = f"TXN-{sender_acc[-4:]}-{receiver_acc[-4:]}"
 
-            # 9️⃣ Log sender transaction
             cursor.execute("""
-                INSERT INTO transactions (
-                    account_id,
-                    amount,
-                    transaction_type,
-                    balance_after,
-                    reference
-                )
+                INSERT INTO transactions (account_id, amount, transaction_type, balance_after, reference)
                 VALUES (%s, %s, 'TRANSFER_OUT', %s, %s)
-            """, (
-                sender["id"],
-                amount,
-                new_sender_balance,
-                f"To {receiver_acc} | {reference}"
-            ))
+            """, (sender["id"], amount, new_sender_balance, f"To {receiver_acc} | {reference}"))
 
-            # 🔟 Log receiver transaction
             cursor.execute("""
-                INSERT INTO transactions (
-                    account_id,
-                    amount,
-                    transaction_type,
-                    balance_after,
-                    reference
-                )
+                INSERT INTO transactions (account_id, amount, transaction_type, balance_after, reference)
                 VALUES (%s, %s, 'TRANSFER_IN', %s, %s)
-            """, (
-                receiver["id"],
-                amount,
-                new_receiver_balance,
-                f"From {sender_acc} | {reference}"
-            ))
+            """, (receiver["id"], amount, new_receiver_balance, f"From {sender_acc} | {reference}"))
 
             conn.commit()
 
@@ -223,20 +167,55 @@ class BankingService:
             }
 
         except Exception as e:
-            conn.rollback()  # 🔐 rollback everything if anything fails
+            conn.rollback()
             raise e
 
         finally:
             conn.close()
 
     # -----------------------------
-    # Get Accounts by Customer
+    # Get Accounts (FIXED)
     # -----------------------------
     def get_my_accounts(self, customer_id: int):
-        return self.account_repo.get_accounts_by_customer(customer_id)
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT id, account_number, balance, account_type
+                FROM accounts
+                WHERE customer_id = %s
+            """, (customer_id,))
+
+            return cursor.fetchall()
+
+        finally:
+            conn.close()
 
     # -----------------------------
-    # Get Transactions by Account
+    # Get Transactions (FIXED)
     # -----------------------------
-    def get_account_transactions(self, account_id: int):
-        return self.transaction_repo.get_transactions_by_account(account_id)
+    def get_transactions(self, customer_id: int):
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT 
+                    t.id,
+                    t.transaction_type,
+                    t.amount,
+                    t.balance_after,
+                    t.reference,
+                    t.created_at,
+                    a.account_number
+                FROM transactions t
+                JOIN accounts a ON t.account_id = a.id
+                WHERE a.customer_id = %s
+                ORDER BY t.created_at DESC
+            """, (customer_id,))
+
+            return cursor.fetchall()
+
+        finally:
+            conn.close()
