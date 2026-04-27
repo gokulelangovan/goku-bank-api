@@ -318,3 +318,32 @@ def update_profile(
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+        
+@app.get("/validate-account/{account_number}")
+def validate_account(
+    account_number: str,
+    user_id: int = Depends(get_current_user)
+):
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT a.id, c.full_name
+            FROM accounts a
+            JOIN customers c ON a.customer_id = c.id
+            WHERE a.account_number = %s
+        """, (account_number,))
+
+        account = cursor.fetchone()
+
+        if not account:
+            raise HTTPException(status_code=404, detail="Account not found")
+
+        return {
+            "valid": True,
+            "name": account["full_name"]
+        }
+
+    finally:
+        conn.close()
